@@ -1,0 +1,17 @@
+{
+  "name": "tda_rust_core",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "tda_rust_core_bg.wasm",
+    "tda_rust_core.js",
+    "tda_rust_core_bg.js",
+    "tda_rust_core.d.ts"
+  ],
+  "main": "tda_rust_core.js",
+  "types": "tda_rust_core.d.ts",
+  "sideEffects": [
+    "./tda_rust_core.js",
+    "./snippets/*"
+  ]
+}

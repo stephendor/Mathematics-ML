@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import PointCloudCanvas from './components/PointCloudCanvas';
 import PersistenceDiagram from './components/PersistenceDiagram';
 import PersistenceBarcode from './components/PersistenceBarcode';
+import { initializeWasm, createTDAEngine, isWasmReady } from './wasmLoader';
 import './App.css';
 
 function App() {
@@ -9,6 +10,30 @@ function App() {
   const [filtrationValue, setFiltrationValue] = useState(0.3);
   const [persistenceData, setPersistenceData] = useState(null);
   const [isComputing, setIsComputing] = useState(false);
+  const [wasmLoaded, setWasmLoaded] = useState(false);
+  const [tdaEngine, setTdaEngine] = useState(null);
+
+  // Initialize WASM on component mount
+  useEffect(() => {
+    const loadWasm = async () => {
+      try {
+        const success = await initializeWasm();
+        if (success) {
+          const engine = createTDAEngine();
+          setTdaEngine(engine);
+          setWasmLoaded(true);
+          console.log('TDA Engine ready');
+        } else {
+          console.warn('WASM failed to load, using mock computation');
+        }
+      } catch (error) {
+        console.error('WASM initialization error:', error);
+        console.warn('Falling back to mock computation');
+      }
+    };
+    
+    loadWasm();
+  }, []);
 
   // Generate some sample data
   const generateSampleData = (type) => {
@@ -59,7 +84,7 @@ function App() {
     setPoints(newPoints);
   };
 
-  // Mock persistence computation (replace with actual WASM call later)
+  // Persistence computation - uses WASM when available, falls back to mock
   const computePersistence = useCallback(() => {
     if (points.length < 3) {
       setPersistenceData(null);
@@ -68,21 +93,58 @@ function App() {
 
     setIsComputing(true);
     
-    // Mock computation with a delay
-    setTimeout(() => {
-      const mockData = {
-        intervals: points.slice(0, Math.min(10, points.length)).map((_, i) => ({
-          birth: Math.random() * filtrationValue * 0.5,
-          death: filtrationValue * (0.6 + Math.random() * 0.4),
-          dimension: Math.random() < 0.7 ? 0 : 1
-        })),
-        filtrationValue: filtrationValue
-      };
-      
-      setPersistenceData(mockData);
-      setIsComputing(false);
-    }, 500);
-  }, [points, filtrationValue]);
+    if (wasmLoaded && tdaEngine) {
+      // Use WASM TDA engine
+      try {
+        // Set points in the TDA engine
+        const pointsArray = points.map(p => [p.x, p.y]);
+        tdaEngine.set_points(pointsArray);
+        
+        // Compute Vietoris-Rips complex
+        tdaEngine.compute_vietoris_rips(filtrationValue);
+        
+        // Compute persistence
+        const persistenceIntervals = tdaEngine.compute_persistence();
+        
+        const wasmData = {
+          pairs: persistenceIntervals.map(interval => ({
+            birth: interval.birth,
+            death: interval.death,
+            dimension: interval.dimension
+          })),
+          filtrationValue: filtrationValue
+        };
+        
+        setPersistenceData(wasmData);
+        setIsComputing(false);
+        console.log('Used WASM computation');
+      } catch (error) {
+        console.error('WASM computation failed, falling back to mock:', error);
+        // Fall back to mock computation
+        mockComputation();
+      }
+    } else {
+      // Fall back to mock computation
+      mockComputation();
+    }
+    
+    function mockComputation() {
+      setTimeout(() => {
+        const mockData = {
+          pairs: points.slice(0, Math.min(10, points.length)).map((_, i) => ({
+            birth: Math.random() * filtrationValue * 0.5,
+            death: filtrationValue * (0.6 + Math.random() * 0.4),
+            dimension: Math.random() < 0.7 ? 0 : 1
+          })),
+          filtrationValue: filtrationValue
+        };
+        
+        setPersistenceData(mockData);
+        setIsComputing(false);
+        console.log('Used mock computation');
+      }, 500);
+    }
+  }, [points, filtrationValue, wasmLoaded, tdaEngine]);
 
   // Handle point creation/editing
   const handlePointsChange = (newPoints) => {
@@ -136,6 +198,7 @@ function App() {
           <div className="info">
             <p>Points: {points.length}</p>
             <p>Status: {isComputing ? 'Computing...' : 'Ready'}</p>
+            <p>Engine: {wasmLoaded ? 'WASM' : 'Mock'}</p>
           </div>
         </div>
         
