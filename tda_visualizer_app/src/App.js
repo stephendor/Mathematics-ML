@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import PointCloudCanvas from './components/PointCloudCanvas';
 import PersistenceDiagram from './components/PersistenceDiagram';
 import PersistenceBarcode from './components/PersistenceBarcode';
+import MapperVisualization from './components/MapperVisualization';
 import { initializeWasm, createTDAEngine, isWasmReady } from './wasmLoader';
 import './App.css';
 
@@ -9,9 +10,11 @@ function App() {
   const [points, setPoints] = useState([]);
   const [filtrationValue, setFiltrationValue] = useState(0.3);
   const [persistenceData, setPersistenceData] = useState(null);
+  const [mapperData, setMapperData] = useState(null);
   const [isComputing, setIsComputing] = useState(false);
   const [wasmLoaded, setWasmLoaded] = useState(false);
   const [tdaEngine, setTdaEngine] = useState(null);
+  const [activeTab, setActiveTab] = useState('persistence');
 
   // Initialize WASM on component mount
   useEffect(() => {
@@ -146,6 +149,59 @@ function App() {
     }
   }, [points, filtrationValue, wasmLoaded, tdaEngine]);
 
+  // Mapper computation - creates network representation of data
+  const computeMapper = useCallback(() => {
+    if (points.length < 5) {
+      setMapperData(null);
+      return;
+    }
+
+    // Mock Mapper computation - creates a network from point clusters
+    const numClusters = Math.min(8, Math.max(3, Math.floor(points.length / 3)));
+    const nodes = [];
+    const links = [];
+
+    // Create nodes (clusters)
+    for (let i = 0; i < numClusters; i++) {
+      const centerPoint = points[Math.floor(Math.random() * points.length)];
+      const clusterSize = Math.floor(Math.random() * 5) + 2;
+      
+      nodes.push({
+        id: `cluster_${i}`,
+        label: `C${i}`,
+        x: centerPoint.x * 600, // Scale to visualization coordinates
+        y: centerPoint.y * 400,
+        radius: 5 + clusterSize * 2,
+        size: clusterSize,
+        color: `hsl(${(i * 360) / numClusters}, 70%, 60%)`,
+        points: points.slice(i * 2, i * 2 + clusterSize) // Mock cluster membership
+      });
+    }
+
+    // Create links between nearby clusters
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dist = Math.sqrt(
+          Math.pow(nodes[i].x - nodes[j].x, 2) + 
+          Math.pow(nodes[i].y - nodes[j].y, 2)
+        );
+        
+        // Connect clusters that are close enough
+        if (dist < 150 && Math.random() < 0.6) {
+          links.push({
+            source: nodes[i].id,
+            target: nodes[j].id,
+            weight: Math.max(0.1, 1 - dist / 150),
+            distance: dist
+          });
+        }
+      }
+    }
+
+    setMapperData({ nodes, links });
+    console.log('Computed Mapper network:', { nodes: nodes.length, links: links.length });
+  }, [points]);
+
   // Handle point creation/editing
   const handlePointsChange = (newPoints) => {
     setPoints(newPoints);
@@ -202,31 +258,85 @@ function App() {
           </div>
         </div>
         
-        <div className="visualization-grid">
-          <div className="viz-panel">
-            <h3>Point Cloud</h3>
-            <PointCloudCanvas
-              points={points}
-              onPointsChange={handlePointsChange}
-              filtrationValue={filtrationValue}
-            />
+        <div className="visualization-container">
+          <div className="tab-controls">
+            <button 
+              className={activeTab === 'persistence' ? 'tab-button active' : 'tab-button'}
+              onClick={() => setActiveTab('persistence')}
+            >
+              Persistence Analysis
+            </button>
+            <button 
+              className={activeTab === 'mapper' ? 'tab-button active' : 'tab-button'}
+              onClick={() => setActiveTab('mapper')}
+            >
+              Mapper Network
+            </button>
           </div>
-          
-          <div className="viz-panel">
-            <h3>Persistence Diagram</h3>
-            <PersistenceDiagram
-              persistenceData={persistenceData}
-              filtrationValue={filtrationValue}
-            />
-          </div>
-          
-          <div className="viz-panel">
-            <h3>Persistence Barcode</h3>
-            <PersistenceBarcode
-              persistenceData={persistenceData}
-              filtrationValue={filtrationValue}
-            />
-          </div>
+
+          {activeTab === 'persistence' && (
+            <div className="visualization-grid">
+              <div className="viz-panel">
+                <h3>Point Cloud</h3>
+                <PointCloudCanvas
+                  points={points}
+                  onPointsChange={handlePointsChange}
+                  filtrationValue={filtrationValue}
+                />
+              </div>
+              
+              <div className="viz-panel">
+                <h3>Persistence Diagram</h3>
+                <PersistenceDiagram
+                  persistenceData={persistenceData}
+                  filtrationValue={filtrationValue}
+                />
+              </div>
+              
+              <div className="viz-panel">
+                <h3>Persistence Barcode</h3>
+                <PersistenceBarcode
+                  persistenceData={persistenceData}
+                  filtrationValue={filtrationValue}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'mapper' && (
+            <div className="mapper-container">
+              <div className="viz-panel mapper-main">
+                <MapperVisualization
+                  mapperData={mapperData}
+                  width={800}
+                  height={600}
+                />
+              </div>
+              <div className="viz-panel mapper-side">
+                <h3>Point Cloud Input</h3>
+                <PointCloudCanvas
+                  points={points}
+                  onPointsChange={handlePointsChange}
+                  filtrationValue={filtrationValue}
+                  width={300}
+                  height={300}
+                />
+                <button 
+                  onClick={computeMapper}
+                  disabled={points.length < 5}
+                  className="compute-button"
+                >
+                  Compute Mapper Network
+                </button>
+                {mapperData && (
+                  <div className="mapper-stats">
+                    <p>Nodes: {mapperData.nodes?.length || 0}</p>
+                    <p>Edges: {mapperData.links?.length || 0}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       
